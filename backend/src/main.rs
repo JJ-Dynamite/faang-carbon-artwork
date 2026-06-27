@@ -1,61 +1,31 @@
-use axum::{
-    routing::get,
-    Router,
-    Json,
-    response::IntoResponse,
-};
+use axum::{routing::{get, post}, Router, Json, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use tower_http::cors::{CorsLayer, Any};
-use tracing_subscriber;
 
-#[derive(Serialize)]
-struct HealthResponse {
-    status: String,
-    service: String,
-    version: String,
-}
-
-#[derive(Serialize)]
-struct ApiResponse<T: Serialize> {
-    success: bool,
-    data: Option<T>,
-    error: Option<String>,
-}
+#[derive(Deserialize)]
+struct CodeRequest { code: String, theme: Option<String>, language: Option<String> }
 
 async fn health_check() -> impl IntoResponse {
-    Json(HealthResponse {
-        status: "healthy".to_string(),
-        service: "Turn code into artwork".to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-    })
+    Json(serde_json::json!({"status": "healthy", "service": "Carbon Artwork"}))
 }
 
-async fn root() -> impl IntoResponse {
-    Json(ApiResponse::<()> {
-        success: true,
-        data: None,
-        error: None,
-    })
+async fn generate_image(Json(req): Json<CodeRequest>) -> impl IntoResponse {
+    Json(serde_json::json!({
+        "success": true,
+        "lines": req.code.lines().count(),
+        "theme": req.theme.unwrap_or("monokai".into()),
+        "image_url": format!("/code/{}.png", uuid::Uuid::new_v4())
+    }))
 }
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
-
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
-
+    let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any);
     let app = Router::new()
-        .route("/", get(root))
+        .route("/", get(|| async { Json(serde_json::json!({"service": "Carbon Artwork"})) }))
         .route("/health", get(health_check))
+        .route("/generate", post(generate_image))
         .layer(cors);
-
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3001")
-        .await
-        .unwrap();
-
-    tracing::info!("Turn code into artwork backend running on port 3001");
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
